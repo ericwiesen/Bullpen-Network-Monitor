@@ -1,0 +1,12 @@
+.git
+apps
+packages
+shared
+infra
+node_modules
+*.pyc
+__pycache__
+.venv
+.env
+*.md
+!README.md

@@ -1,0 +1,131 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Network Monitor</title>
+  <style>
+    * { box-sizing: border-box; }
+    body { font-family: system-ui, sans-serif; max-width: 720px; margin: 0 auto; padding: 1.5rem; }
+    h1 { margin-top: 0; }
+    section { margin-bottom: 1.5rem; }
+    label { display: block; margin-bottom: 0.25rem; font-weight: 500; }
+    input[type="text"], select { padding: 0.5rem; width: 100%; max-width: 320px; }
+    button { padding: 0.5rem 1rem; cursor: pointer; margin-right: 0.5rem; margin-top: 0.5rem; }
+    button:disabled { opacity: 0.6; cursor: not-allowed; }
+    ul { list-style: none; padding: 0; }
+    li { padding: 0.35rem 0; border-bottom: 1px solid #eee; display: flex; justify-content: space-between; align-items: center; }
+    .output { background: #f5f5f5; border: 1px solid #ddd; border-radius: 8px; padding: 1rem; min-height: 200px; max-height: 60vh; overflow-y: auto; }
+    .output.empty { color: #888; }
+    .output .item { margin-bottom: 1rem; padding-bottom: 1rem; border-bottom: 1px solid #eee; }
+    .output .item:last-child { border-bottom: none; margin-bottom: 0; padding-bottom: 0; }
+    .output a { color: #06c; }
+    .output .meta { font-size: 0.85rem; color: #666; margin-top: 0.25rem; }
+    .error { color: #c00; }
+    .row { display: flex; gap: 0.5rem; align-items: flex-end; flex-wrap: wrap; }
+  </style>
+</head>
+<body>
+  <h1>Network Monitor</h1>
+  <p>Add people and companies, then click Run to fetch recent news and content.</p>
+
+  <section>
+    <label>Add person or company</label>
+    <div class="row">
+      <input type="text" id="name" placeholder="e.g. Acme Corp or Jane Smith" />
+      <select id="type">
+        <option value="company">Company</option>
+        <option value="person">Person</option>
+      </select>
+      <button type="button" id="addBtn">Add</button>
+    </div>
+  </section>
+
+  <section>
+    <label>People & companies to monitor</label>
+    <ul id="list"></ul>
+  </section>
+
+  <section>
+    <button type="button" id="runBtn">Run</button>
+    <span id="status"></span>
+  </section>
+
+  <section>
+    <label>Output</label>
+    <div class="output empty" id="output">Click Run to fetch results. Results will appear here.</div>
+  </section>
+
+  <script>
+    const nameInput = document.getElementById('name');
+    const typeSelect = document.getElementById('type');
+    const addBtn = document.getElementById('addBtn');
+    const listEl = document.getElementById('list');
+    const runBtn = document.getElementById('runBtn');
+    const statusEl = document.getElementById('status');
+    const outputEl = document.getElementById('output');
+
+    function api(path, options = {}) {
+      return fetch(path, { headers: { 'Content-Type': 'application/json' }, ...options }).then(r => {
+        if (!r.ok) throw new Error(r.statusText);
+        return r.status === 204 ? null : r.json();
+      });
+    }
+
+    function loadEntities() {
+      api('/api/entities').then(entities => {
+        listEl.innerHTML = entities.length === 0
+          ? '<li style="color:#888">None yet. Add one above.</li>'
+          : entities.map(e => `<li><span>${e.name} <small>(${e.type})</small></span><button type="button" data-id="${e.id}" class="delBtn">Remove</button></li>`).join('');
+        listEl.querySelectorAll('.delBtn').forEach(btn => {
+          btn.onclick = () => api(`/api/entities/${btn.dataset.id}`, { method: 'DELETE' }).then(loadEntities);
+        });
+      }).catch(err => { statusEl.textContent = 'Error loading list'; statusEl.className = 'error'; });
+    }
+
+    addBtn.onclick = () => {
+      const name = nameInput.value.trim();
+      if (!name) return;
+      addBtn.disabled = true;
+      api('/api/entities', { method: 'POST', body: JSON.stringify({ name, type: typeSelect.value }) })
+        .then(() => { nameInput.value = ''; loadEntities(); })
+        .catch(err => { statusEl.textContent = 'Add failed'; statusEl.className = 'error'; })
+        .finally(() => { addBtn.disabled = false; });
+    };
+
+    runBtn.onclick = () => {
+      runBtn.disabled = true;
+      statusEl.textContent = 'Running…';
+      statusEl.className = '';
+      outputEl.textContent = 'Running…';
+      outputEl.className = 'output';
+      api('/api/run', { method: 'POST' })
+        .then(results => {
+          statusEl.textContent = 'Done.';
+          if (results.length === 0) {
+            outputEl.innerHTML = 'No results (add some people/companies first).';
+            outputEl.className = 'output empty';
+          } else {
+            outputEl.className = 'output';
+            outputEl.innerHTML = results.map(r => `
+              <div class="item">
+                <strong>${r.entity_name}</strong><br />
+                <a href="${r.url}" target="_blank" rel="noreferrer">${r.title}</a>
+                <div class="meta">${r.source || ''} ${r.snippet ? ' · ' + r.snippet : ''}</div>
+              </div>
+            `).join('');
+          }
+        })
+        .catch(err => {
+          statusEl.textContent = 'Run failed';
+          statusEl.className = 'error';
+          outputEl.textContent = 'Run failed: ' + err.message;
+          outputEl.className = 'output error';
+        })
+        .finally(() => { runBtn.disabled = false; });
+    };
+
+    loadEntities();
+  </script>
+</body>
+</html>

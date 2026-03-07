@@ -1,8 +1,0 @@
-sqlalchemy>=2.0.0
-psycopg2-binary>=2.9.9
-redis>=5.0.0
-rq>=1.16.0
-httpx>=0.26.0
-beautifulsoup4>=4.12.0
-trafilatura>=1.6.0
-pydantic-settings>=2.0.0
