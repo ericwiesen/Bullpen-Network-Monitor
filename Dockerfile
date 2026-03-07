@@ -12,7 +12,8 @@ FROM python:3.11-slim
 WORKDIR /app
 
 COPY packages/shared ./packages/shared
-COPY apps/api/requirements.txt apps/worker/requirements.txt ./
+COPY apps/api/requirements.txt ./apps/api/requirements.txt
+COPY apps/worker/requirements.txt ./apps/worker/requirements.txt
 RUN pip install --no-cache-dir -e packages/shared && \
     pip install -r apps/api/requirements.txt && \
     pip install -r apps/worker/requirements.txt
