@@ -8,7 +8,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
-from database import init_db, get_db, SessionLocal, Entity, Run, Result
+from database import init_db, get_db, Entity, Run, Result
 
 # Create tables on startup (don't crash if DB not ready – e.g. DATABASE_URL missing on first deploy)
 @asynccontextmanager
