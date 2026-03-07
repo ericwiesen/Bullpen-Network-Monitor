@@ -6,4 +6,3 @@ httpx>=0.26.0
 beautifulsoup4>=4.12.0
 trafilatura>=1.6.0
 pydantic-settings>=2.0.0
--e ../../packages/shared

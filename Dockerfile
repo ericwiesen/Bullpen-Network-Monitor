@@ -1,4 +1,4 @@
-# Build frontend
+# Frontend
 FROM node:20-alpine AS frontend
 WORKDIR /app/web
 COPY apps/web/package.json apps/web/package-lock.json ./
@@ -7,26 +7,23 @@ COPY apps/web ./
 ENV VITE_API_URL=/api
 RUN npm run build
 
-# Runtime: API + worker (same image; Railway runs two services with different start commands)
+# API + worker
 FROM python:3.11-slim
 WORKDIR /app
 
-COPY packages/shared ./packages/shared
-COPY apps/api/requirements.txt ./apps/api/requirements.txt
-COPY apps/worker/requirements.txt ./apps/worker/requirements.txt
-# In Docker, paths are from /app; fix editable ref so pip finds packages/shared
-RUN sed -i 's|-e ../../packages/shared|-e packages/shared|g' apps/api/requirements.txt apps/worker/requirements.txt && \
-    pip install --no-cache-dir -e packages/shared && \
-    pip install -r apps/api/requirements.txt && \
-    pip install -r apps/worker/requirements.txt
+COPY shared ./shared
+COPY apps/api/requirements.txt ./api-requirements.txt
+COPY apps/worker/requirements.txt ./worker-requirements.txt
+RUN pip install --no-cache-dir -r api-requirements.txt -r worker-requirements.txt
 
 COPY apps/api ./apps/api
 COPY apps/worker ./apps/worker
 COPY --from=frontend /app/web/dist ./apps/api/static
 
 ENV PORT=8000
+ENV PYTHONPATH=/app:/app/apps/worker
 EXPOSE 8000
 
-# Default: run API. For the worker service, set start command to:
-# cd /app/apps/worker && PYTHONPATH=/app/apps/worker:/app/packages/shared rq worker $REDIS_URL default
-CMD ["sh", "-c", "cd /app/apps/api && PYTHONPATH=/app/packages/shared uvicorn app.main:app --host 0.0.0.0 --port ${PORT}"]
+# API service (default). Worker: set start command to:
+# rq worker $REDIS_URL default
+CMD ["sh", "-c", "cd /app/apps/api && uvicorn app.main:app --host 0.0.0.0 --port ${PORT}"]

@@ -24,14 +24,11 @@ You can run everything on [Railway](https://railway.app) (as with Deal Agent). N
 3. **Add a second service** (worker) from the **same repo**:
    - Same build (Dockerfile). In **Settings → Deploy**, set **Custom Start Command** to:
      ```bash
-     cd /app/apps/worker && PYTHONPATH=/app/apps/worker:/app/packages/shared rq worker $REDIS_URL default
+     rq worker $REDIS_URL default
      ```
    - Use the same `DATABASE_URL` and `REDIS_URL` as the API (or link the same Postgres/Redis).
 
-4. **Run DB migrations once**: from your machine (or a one-off Railway run), call the API so it runs `init_db` on startup, or run:
-   ```bash
-   PYTHONPATH=apps/api:packages/shared python -c "from app.database import init_db; init_db()"
-   ```
+4. **Run DB migrations once**: the API runs `init_db()` on startup, so tables are created automatically on first deploy.
    with `DATABASE_URL` set to your Railway Postgres URL. The API also runs `init_db()` on startup, so tables are created automatically on first deploy if the app starts successfully.
 
 5. Open the API service URL: you get the **dashboard** (React app) and the **API** at `/api/...`. Manual and scheduled runs (e.g. `POST /api/runs/schedule`) are processed by the worker.
@@ -57,7 +54,6 @@ Without Docker (e.g. Homebrew): install and start Postgres and Redis, then set `
 From repo root:
 
 ```bash
-pip install -e packages/shared
 pip install -r apps/api/requirements.txt
 pip install -r apps/worker/requirements.txt
 ```
@@ -72,7 +68,7 @@ export REDIS_URL=redis://localhost:6379/0
 Create tables (run once, from repo root):
 
 ```bash
-PYTHONPATH=apps/api:packages/shared python -c "from app.database import init_db; init_db()"
+PYTHONPATH=.:apps/api python -c "from app.database import init_db; init_db()"
 ```
 
 ### 3. Run API
@@ -80,17 +76,15 @@ PYTHONPATH=apps/api:packages/shared python -c "from app.database import init_db;
 From repo root:
 
 ```bash
-PYTHONPATH=apps/api:packages/shared uvicorn app.main:app --reload --app-dir apps/api
+PYTHONPATH=.:apps/api uvicorn app.main:app --reload --app-dir apps/api
 ```
-
-Or from `apps/api`: `PYTHONPATH=.:../../packages/shared uvicorn app.main:app --reload`
 
 ### 4. Run worker
 
 In another terminal, from repo root:
 
 ```bash
-PYTHONPATH=apps/worker:packages/shared python -m rq worker redis://localhost:6379/0 default
+PYTHONPATH=.:apps/worker python -m rq worker redis://localhost:6379/0 default
 ```
 
 ### 5. Run web UI
@@ -127,5 +121,5 @@ By default the worker uses a **mock search** that returns placeholder results. T
 - `apps/api` – FastAPI app and routes (watchlists, entities, runs).
 - `apps/worker` – RQ jobs: search, fetch, dedupe/score, run orchestration.
 - `apps/web` – React dashboard (watchlists, entities, runs, results).
-- `packages/shared` – SQLAlchemy models and DB helpers.
+- `shared` – SQLAlchemy models and DB helpers (used by API and worker).
 - `infra` – docker-compose (Postgres, Redis) for local dev only; on Railway, use Postgres + Redis plugins.

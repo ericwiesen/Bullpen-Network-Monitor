@@ -1,7 +1,8 @@
 import sys
 import os
 
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "../..")))
+# Repo root on path so "shared" is importable (Docker sets PYTHONPATH=/app)
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "../../..")))
 from pathlib import Path
 
 from fastapi import FastAPI, Request
