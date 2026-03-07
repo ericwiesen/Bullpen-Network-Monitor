@@ -14,7 +14,9 @@ WORKDIR /app
 COPY packages/shared ./packages/shared
 COPY apps/api/requirements.txt ./apps/api/requirements.txt
 COPY apps/worker/requirements.txt ./apps/worker/requirements.txt
-RUN pip install --no-cache-dir -e packages/shared && \
+# In Docker, paths are from /app; fix editable ref so pip finds packages/shared
+RUN sed -i 's|-e ../../packages/shared|-e packages/shared|g' apps/api/requirements.txt apps/worker/requirements.txt && \
+    pip install --no-cache-dir -e packages/shared && \
     pip install -r apps/api/requirements.txt && \
     pip install -r apps/worker/requirements.txt
 
