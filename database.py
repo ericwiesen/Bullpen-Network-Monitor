@@ -6,16 +6,25 @@ from datetime import datetime
 Base = declarative_base()
 DATABASE_URL = os.environ.get("DATABASE_URL", "postgresql://postgres:postgres@localhost:5432/monitoring")
 
+_engine = None
+_SessionLocal = None
+
 
 def get_engine():
-    connect_args = {}
-    if "railway" in DATABASE_URL.lower() and "sslmode" not in DATABASE_URL:
-        connect_args["sslmode"] = "require"
-    return create_engine(DATABASE_URL, pool_pre_ping=True, connect_args=connect_args)
+    global _engine
+    if _engine is None:
+        connect_args = {}
+        if DATABASE_URL and "railway" in DATABASE_URL.lower() and "sslmode" not in DATABASE_URL:
+            connect_args["sslmode"] = "require"
+        _engine = create_engine(DATABASE_URL, pool_pre_ping=True, connect_args=connect_args)
+    return _engine
 
 
-engine = get_engine()
-SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+def _get_session_factory():
+    global _SessionLocal
+    if _SessionLocal is None:
+        _SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=get_engine())
+    return _SessionLocal
 
 
 class Entity(Base):
@@ -45,11 +54,11 @@ class Result(Base):
 
 
 def init_db():
-    Base.metadata.create_all(bind=engine)
+    Base.metadata.create_all(bind=get_engine())
 
 
 def get_db():
-    db = SessionLocal()
+    db = _get_session_factory()()
     try:
         yield db
     finally:

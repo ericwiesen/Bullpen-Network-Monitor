@@ -10,14 +10,23 @@ from sqlalchemy.orm import Session
 
 from database import init_db, get_db, SessionLocal, Entity, Run, Result
 
-# Create tables on startup
+# Create tables on startup (don't crash if DB not ready – e.g. DATABASE_URL missing on first deploy)
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    init_db()
+    try:
+        init_db()
+    except Exception as e:
+        print("Database init failed (set DATABASE_URL and retry):", e)
     yield
 
 
 app = FastAPI(title="Network Monitor", lifespan=lifespan)
+
+
+@app.get("/api/health")
+def health():
+    """Railway can hit this to check the app is up. Does not touch the database."""
+    return {"status": "ok"}
 
 
 # --- API ---
