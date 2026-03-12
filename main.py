@@ -84,25 +84,37 @@ def add_entity(body: EntityCreate, db: Session = Depends(get_db)):
     return e
 
 
+def _looks_english(text: str) -> bool:
+    """Returns False if more than 10% of characters are non-ASCII (likely foreign language)."""
+    if not text:
+        return True
+    return sum(1 for c in text if ord(c) > 127) / len(text) < 0.10
+
+
 def lookup_entity(name: str, entity_type: str, context: Optional[str] = None) -> dict:
     """Find a description and URL for the entity via DuckDuckGo web search."""
-    # Quote the name for precision; add context if provided
     query = " ".join(filter(None, [f'"{name}"', context, entity_type]))
+    # Slugified name for domain matching (e.g. "AvantStay" → "avantstay")
+    name_slug = name.lower().replace(" ", "").replace("-", "")
+    first_word = name.lower().split()[0]
     try:
         with DDGS() as ddgs:
-            results = list(ddgs.text(query, region="us-en", max_results=5))
-            if not results:
-                return {"description": None, "url": None}
-            # Prefer a result whose URL or title contains the first word of the name
-            first_word = name.lower().split()[0]
-            for r in results:
-                if first_word in r.get("href", "").lower() or first_word in r.get("title", "").lower():
-                    return {"description": r.get("body"), "url": r.get("href")}
-            # Fall back to the top result
-            return {
-                "description": results[0].get("body"),
-                "url": results[0].get("href"),
-            }
+            results = list(ddgs.text(query, region="us-en", max_results=10))
+        if not results:
+            return {"description": None, "url": None}
+        # Prefer English results
+        english = [r for r in results if _looks_english(r.get("title", "") + r.get("body", ""))]
+        candidates = english if english else results
+        # 1st priority: domain contains the entity name slug (e.g. avantstay.com)
+        for r in candidates:
+            if name_slug in r.get("href", "").lower():
+                return {"description": r.get("body"), "url": r.get("href")}
+        # 2nd priority: title contains the first word of the name
+        for r in candidates:
+            if first_word in r.get("title", "").lower():
+                return {"description": r.get("body"), "url": r.get("href")}
+        # Fallback: first English result
+        return {"description": candidates[0].get("body"), "url": candidates[0].get("href")}
     except Exception:
         pass
     return {"description": None, "url": None}
