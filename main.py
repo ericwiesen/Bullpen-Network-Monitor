@@ -86,15 +86,23 @@ def add_entity(body: EntityCreate, db: Session = Depends(get_db)):
 
 def lookup_entity(name: str, entity_type: str, context: Optional[str] = None) -> dict:
     """Find a description and URL for the entity via DuckDuckGo web search."""
-    query = " ".join(filter(None, [name, context, entity_type]))
+    # Quote the name for precision; add context if provided
+    query = " ".join(filter(None, [f'"{name}"', context, entity_type]))
     try:
         with DDGS() as ddgs:
-            results = list(ddgs.text(query, max_results=1))
-            if results:
-                return {
-                    "description": results[0].get("body"),
-                    "url": results[0].get("href"),
-                }
+            results = list(ddgs.text(query, region="us-en", max_results=5))
+            if not results:
+                return {"description": None, "url": None}
+            # Prefer a result whose URL or title contains the first word of the name
+            first_word = name.lower().split()[0]
+            for r in results:
+                if first_word in r.get("href", "").lower() or first_word in r.get("title", "").lower():
+                    return {"description": r.get("body"), "url": r.get("href")}
+            # Fall back to the top result
+            return {
+                "description": results[0].get("body"),
+                "url": results[0].get("href"),
+            }
     except Exception:
         pass
     return {"description": None, "url": None}
