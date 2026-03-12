@@ -151,7 +151,7 @@ def do_run(db: Session) -> list[dict]:
             query = f"{e.name} {e.context}" if e.context else e.name
             try:
                 with DDGS() as ddgs:
-                    hits = list(ddgs.news(query, max_results=5))
+                    hits = list(ddgs.news(query, max_results=10, timelimit="m"))
             except Exception:
                 hits = []
             for h in hits:
