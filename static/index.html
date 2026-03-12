@@ -45,8 +45,14 @@
         <option value="person">Person</option>
       </select>
     </div>
-    <div class="context-label">Context <span style="font-weight:normal;color:#aaa">(optional — helps with common names)</span></div>
-    <input type="text" id="context" class="context-input" placeholder="e.g. CEO of Meridian Capital, based in Chicago" />
+    <div id="urlRow">
+      <div class="context-label">Website URL <span style="font-weight:normal;color:#aaa">(required)</span></div>
+      <input type="text" id="url" class="context-input" placeholder="e.g. https://avantstay.com" />
+    </div>
+    <div id="contextRow" style="display:none">
+      <div class="context-label">Context <span style="font-weight:normal;color:#aaa">(optional — helps with common names)</span></div>
+      <input type="text" id="context" class="context-input" placeholder="e.g. CEO of Meridian Capital, based in Chicago" />
+    </div>
     <div><button type="button" id="addBtn">Add</button></div>
   </section>
 
@@ -69,7 +75,16 @@
     const nameInput = document.getElementById('name');
     const typeSelect = document.getElementById('type');
     const contextInput = document.getElementById('context');
+    const urlInput = document.getElementById('url');
+    const urlRow = document.getElementById('urlRow');
+    const contextRow = document.getElementById('contextRow');
     const addBtn = document.getElementById('addBtn');
+
+    typeSelect.addEventListener('change', () => {
+      const isCompany = typeSelect.value === 'company';
+      urlRow.style.display = isCompany ? '' : 'none';
+      contextRow.style.display = isCompany ? 'none' : '';
+    });
     const listEl = document.getElementById('list');
     const runBtn = document.getElementById('runBtn');
     const statusEl = document.getElementById('status');
@@ -130,12 +145,15 @@
     addBtn.onclick = () => {
       const name = nameInput.value.trim();
       if (!name) return;
-      const context = contextInput.value.trim() || null;
+      const isCompany = typeSelect.value === 'company';
+      const url = isCompany ? (urlInput.value.trim() || null) : null;
+      const context = !isCompany ? (contextInput.value.trim() || null) : null;
+      if (isCompany && !url) { statusEl.textContent = 'Please enter the company URL.'; statusEl.className = 'error'; return; }
       addBtn.disabled = true;
-      statusEl.textContent = 'Adding and looking up…';
+      statusEl.textContent = isCompany ? 'Adding…' : 'Adding and looking up…';
       statusEl.className = '';
-      api('/api/entities', { method: 'POST', body: JSON.stringify({ name, type: typeSelect.value, context }) })
-        .then(() => { nameInput.value = ''; contextInput.value = ''; statusEl.textContent = ''; loadEntities(); })
+      api('/api/entities', { method: 'POST', body: JSON.stringify({ name, type: typeSelect.value, context, url }) })
+        .then(() => { nameInput.value = ''; urlInput.value = ''; contextInput.value = ''; statusEl.textContent = ''; loadEntities(); })
         .catch(err => { statusEl.textContent = 'Add failed: ' + (err.message || 'check console'); statusEl.className = 'error'; })
         .finally(() => { addBtn.disabled = false; });
     };

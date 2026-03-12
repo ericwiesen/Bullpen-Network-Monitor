@@ -48,6 +48,7 @@ class EntityCreate(BaseModel):
     name: str
     type: str  # "company" or "person"
     context: Optional[str] = None
+    url: Optional[str] = None
 
 
 class EntityItem(BaseModel):
@@ -71,16 +72,23 @@ def list_entities(db: Session = Depends(get_db)):
 def add_entity(body: EntityCreate, db: Session = Depends(get_db)):
     name = body.name.strip()
     context = body.context.strip() if body.context else None
+    provided_url = body.url.strip() if body.url else None
     e = Entity(name=name, type=body.type, context=context)
     db.add(e)
     db.commit()
     db.refresh(e)
-    info = lookup_entity(name, body.type, context)
-    if info.get("description") or info.get("url"):
-        e.description = info.get("description")
-        e.url = info.get("url")
+    if body.type == "company" and provided_url:
+        # Use the URL the user provided directly — no search needed
+        e.url = provided_url
         db.commit()
         db.refresh(e)
+    elif body.type == "person":
+        info = lookup_entity(name, body.type, context)
+        if info.get("description") or info.get("url"):
+            e.description = info.get("description")
+            e.url = info.get("url")
+            db.commit()
+            db.refresh(e)
     return e
 
 
