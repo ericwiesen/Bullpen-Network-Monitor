@@ -11,23 +11,30 @@
     section { margin-bottom: 1.5rem; }
     label { display: block; margin-bottom: 0.25rem; font-weight: 500; }
     input[type="text"], select { padding: 0.5rem; width: 100%; max-width: 320px; }
+    .context-input { max-width: 480px; color: #555; font-size: 0.9rem; }
+    .context-label { font-size: 0.85rem; color: #666; font-weight: normal; margin-top: 0.5rem; margin-bottom: 0.25rem; }
     button { padding: 0.5rem 1rem; cursor: pointer; margin-right: 0.5rem; margin-top: 0.5rem; }
     button:disabled { opacity: 0.6; cursor: not-allowed; }
     ul { list-style: none; padding: 0; }
-    li { padding: 0.35rem 0; border-bottom: 1px solid #eee; display: flex; justify-content: space-between; align-items: center; }
+    li { padding: 0.5rem 0; border-bottom: 1px solid #eee; display: flex; justify-content: space-between; align-items: flex-start; gap: 0.5rem; }
+    li span { flex: 1; min-width: 0; }
+    .entity-context { font-size: 0.85rem; color: #888; font-style: italic; margin-top: 0.1rem; }
+    .entity-desc { font-size: 0.9rem; color: #555; margin-top: 0.25rem; line-height: 1.35; }
+    .entity-link { font-size: 0.85rem; margin-left: 0.25rem; }
     .output { background: #f5f5f5; border: 1px solid #ddd; border-radius: 8px; padding: 1rem; min-height: 200px; max-height: 60vh; overflow-y: auto; }
     .output.empty { color: #888; }
     .output .item { margin-bottom: 1rem; padding-bottom: 1rem; border-bottom: 1px solid #eee; }
     .output .item:last-child { border-bottom: none; margin-bottom: 0; padding-bottom: 0; }
     .output a { color: #06c; }
     .output .meta { font-size: 0.85rem; color: #666; margin-top: 0.25rem; }
+    .output .last-run-note { font-size: 0.8rem; color: #999; margin-bottom: 0.75rem; }
     .error { color: #c00; }
     .row { display: flex; gap: 0.5rem; align-items: flex-end; flex-wrap: wrap; }
   </style>
 </head>
 <body>
   <h1>Network Monitor</h1>
-  <p>Add people and companies, then click Run to fetch recent news and content.</p>
+  <p>Add people and companies, then click Run to fetch recent news.</p>
 
   <section>
     <label>Add person or company</label>
@@ -37,8 +44,10 @@
         <option value="company">Company</option>
         <option value="person">Person</option>
       </select>
-      <button type="button" id="addBtn">Add</button>
     </div>
+    <div class="context-label">Context <span style="font-weight:normal;color:#aaa">(optional — helps with common names)</span></div>
+    <input type="text" id="context" class="context-input" placeholder="e.g. CEO of Meridian Capital, based in Chicago" />
+    <div><button type="button" id="addBtn">Add</button></div>
   </section>
 
   <section>
@@ -59,6 +68,7 @@
   <script>
     const nameInput = document.getElementById('name');
     const typeSelect = document.getElementById('type');
+    const contextInput = document.getElementById('context');
     const addBtn = document.getElementById('addBtn');
     const listEl = document.getElementById('list');
     const runBtn = document.getElementById('runBtn');
@@ -66,38 +76,77 @@
     const outputEl = document.getElementById('output');
 
     function api(path, options = {}) {
-      return fetch(path, { headers: { 'Content-Type': 'application/json' }, ...options }).then(r => {
-        if (!r.ok) throw new Error(r.statusText);
-        return r.status === 204 ? null : r.json();
+      return fetch(path, { headers: { 'Content-Type': 'application/json' }, ...options }).then(async r => {
+        const body = r.status === 204 ? null : await r.json().catch(() => ({}));
+        if (!r.ok) throw new Error(body?.detail || body?.message || r.statusText);
+        return body;
       });
+    }
+
+    function esc(s) { return (s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/"/g,'&quot;'); }
+
+    function renderResults(results, note) {
+      if (!results || results.length === 0) {
+        outputEl.innerHTML = 'No results found.';
+        outputEl.className = 'output empty';
+        return;
+      }
+      const noteHtml = note ? `<div class="last-run-note">${esc(note)}</div>` : '';
+      outputEl.className = 'output';
+      outputEl.innerHTML = noteHtml + results.map(r => `
+        <div class="item">
+          <strong>${esc(r.entity_name)}</strong><br />
+          <a href="${esc(r.url)}" target="_blank" rel="noreferrer">${esc(r.title)}</a>
+          <div class="meta">${esc(r.source || '')}${r.snippet ? ' · ' + esc(r.snippet) : ''}</div>
+        </div>
+      `).join('');
     }
 
     function loadEntities() {
       api('/api/entities').then(entities => {
         listEl.innerHTML = entities.length === 0
           ? '<li style="color:#888">None yet. Add one above.</li>'
-          : entities.map(e => `<li><span>${e.name} <small>(${e.type})</small></span><button type="button" data-id="${e.id}" class="delBtn">Remove</button></li>`).join('');
+          : entities.map(e => {
+              const ctx = e.context ? `<div class="entity-context">${esc(e.context)}</div>` : '';
+              const desc = e.description ? `<div class="entity-desc">${esc(e.description)}</div>` : '';
+              const link = e.url ? `<a href="${esc(e.url)}" target="_blank" rel="noreferrer" class="entity-link">Info ↗</a>` : '';
+              return `<li><span><strong>${esc(e.name)}</strong> <small>(${e.type})</small> ${link}${ctx}${desc}</span><button type="button" data-id="${e.id}" class="delBtn">Remove</button></li>`;
+            }).join('');
         listEl.querySelectorAll('.delBtn').forEach(btn => {
           btn.onclick = () => api(`/api/entities/${btn.dataset.id}`, { method: 'DELETE' }).then(loadEntities);
         });
-      }).catch(err => { statusEl.textContent = 'Error loading list'; statusEl.className = 'error'; });
+      }).catch(() => { statusEl.textContent = 'Error loading list'; statusEl.className = 'error'; });
+    }
+
+    function loadLastRun() {
+      api('/api/last-run').then(data => {
+        if (data.run_id && data.results && data.results.length > 0) {
+          const d = data.created_at ? new Date(data.created_at).toLocaleString() : '';
+          renderResults(data.results, `Last run: ${d}`);
+        }
+      }).catch(() => {});
     }
 
     addBtn.onclick = () => {
       const name = nameInput.value.trim();
       if (!name) return;
+      const context = contextInput.value.trim() || null;
       addBtn.disabled = true;
-      api('/api/entities', { method: 'POST', body: JSON.stringify({ name, type: typeSelect.value }) })
-        .then(() => { nameInput.value = ''; loadEntities(); })
-        .catch(err => { statusEl.textContent = 'Add failed'; statusEl.className = 'error'; })
+      statusEl.textContent = 'Adding and looking up…';
+      statusEl.className = '';
+      api('/api/entities', { method: 'POST', body: JSON.stringify({ name, type: typeSelect.value, context }) })
+        .then(() => { nameInput.value = ''; contextInput.value = ''; statusEl.textContent = ''; loadEntities(); })
+        .catch(err => { statusEl.textContent = 'Add failed: ' + (err.message || 'check console'); statusEl.className = 'error'; })
         .finally(() => { addBtn.disabled = false; });
     };
+
+    nameInput.addEventListener('keydown', e => { if (e.key === 'Enter') addBtn.click(); });
 
     runBtn.onclick = () => {
       runBtn.disabled = true;
       statusEl.textContent = 'Running…';
       statusEl.className = '';
-      outputEl.textContent = 'Running…';
+      outputEl.textContent = 'Running… this may take a few seconds.';
       outputEl.className = 'output';
       api('/api/run', { method: 'POST' })
         .then(results => {
@@ -106,14 +155,7 @@
             outputEl.innerHTML = 'No results (add some people/companies first).';
             outputEl.className = 'output empty';
           } else {
-            outputEl.className = 'output';
-            outputEl.innerHTML = results.map(r => `
-              <div class="item">
-                <strong>${r.entity_name}</strong><br />
-                <a href="${r.url}" target="_blank" rel="noreferrer">${r.title}</a>
-                <div class="meta">${r.source || ''} ${r.snippet ? ' · ' + r.snippet : ''}</div>
-              </div>
-            `).join('');
+            renderResults(results, null);
           }
         })
         .catch(err => {
@@ -126,6 +168,7 @@
     };
 
     loadEntities();
+    loadLastRun();
   </script>
 </body>
 </html>

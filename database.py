@@ -1,7 +1,7 @@
 import os
-from sqlalchemy import create_engine, Column, Integer, String, Text, DateTime, ForeignKey
+from sqlalchemy import create_engine, Column, Integer, String, Text, DateTime, ForeignKey, text
 from sqlalchemy.orm import declarative_base, sessionmaker
-from datetime import datetime
+from datetime import datetime, timezone
 
 Base = declarative_base()
 DATABASE_URL = os.environ.get("DATABASE_URL", "postgresql://postgres:postgres@localhost:5432/monitoring")
@@ -32,13 +32,16 @@ class Entity(Base):
     id = Column(Integer, primary_key=True, autoincrement=True)
     name = Column(String(255), nullable=False)
     type = Column(String(20), nullable=False)  # "company" or "person"
-    created_at = Column(DateTime, default=datetime.utcnow)
+    context = Column(Text, nullable=True)       # user-supplied hint, e.g. "CEO of Acme Corp"
+    description = Column(Text, nullable=True)   # from web lookup
+    url = Column(String(512), nullable=True)    # canonical or info URL from lookup
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
 
 
 class Run(Base):
     __tablename__ = "runs"
     id = Column(Integer, primary_key=True, autoincrement=True)
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
     status = Column(String(20), default="running")  # running, completed, failed
 
 
@@ -54,7 +57,17 @@ class Result(Base):
 
 
 def init_db():
-    Base.metadata.create_all(bind=get_engine())
+    engine = get_engine()
+    Base.metadata.create_all(bind=engine)
+    # Add new columns if they don't exist (e.g. after deploy)
+    with engine.connect() as conn:
+        for stmt in (
+            "ALTER TABLE entities ADD COLUMN IF NOT EXISTS context TEXT",
+            "ALTER TABLE entities ADD COLUMN IF NOT EXISTS description TEXT",
+            "ALTER TABLE entities ADD COLUMN IF NOT EXISTS url VARCHAR(512)",
+        ):
+            conn.execute(text(stmt))
+        conn.commit()
 
 
 def get_db():

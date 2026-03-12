@@ -1,16 +1,21 @@
+from __future__ import annotations
+
 import os
 from contextlib import asynccontextmanager
 from pathlib import Path
+from typing import Optional
 
-from fastapi import FastAPI, Depends, HTTPException
-from fastapi.responses import FileResponse
+from duckduckgo_search import DDGS
+from fastapi import FastAPI, Depends, HTTPException, Request
+from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
+from sqlalchemy.exc import OperationalError
 
 from database import init_db, get_db, Entity, Run, Result
 
-# Create tables on startup (don't crash if DB not ready – e.g. DATABASE_URL missing on first deploy)
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     try:
@@ -21,6 +26,14 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(title="Network Monitor", lifespan=lifespan)
+
+
+@app.exception_handler(OperationalError)
+def db_error_handler(request: Request, exc: OperationalError):
+    return JSONResponse(
+        status_code=503,
+        content={"detail": "Database not connected. In Railway, add a Postgres plugin and link DATABASE_URL to this service."},
+    )
 
 
 @app.get("/api/health")
@@ -34,12 +47,16 @@ def health():
 class EntityCreate(BaseModel):
     name: str
     type: str  # "company" or "person"
+    context: Optional[str] = None
 
 
 class EntityItem(BaseModel):
     id: int
     name: str
     type: str
+    context: Optional[str] = None
+    description: Optional[str] = None
+    url: Optional[str] = None
 
     class Config:
         from_attributes = True
@@ -52,11 +69,35 @@ def list_entities(db: Session = Depends(get_db)):
 
 @app.post("/api/entities", response_model=EntityItem)
 def add_entity(body: EntityCreate, db: Session = Depends(get_db)):
-    e = Entity(name=body.name.strip(), type=body.type)
+    name = body.name.strip()
+    context = body.context.strip() if body.context else None
+    e = Entity(name=name, type=body.type, context=context)
     db.add(e)
     db.commit()
     db.refresh(e)
+    info = lookup_entity(name, body.type, context)
+    if info.get("description") or info.get("url"):
+        e.description = info.get("description")
+        e.url = info.get("url")
+        db.commit()
+        db.refresh(e)
     return e
+
+
+def lookup_entity(name: str, entity_type: str, context: Optional[str] = None) -> dict:
+    """Find a description and URL for the entity via DuckDuckGo web search."""
+    query = " ".join(filter(None, [name, context, entity_type]))
+    try:
+        with DDGS() as ddgs:
+            results = list(ddgs.text(query, max_results=1))
+            if results:
+                return {
+                    "description": results[0].get("body"),
+                    "url": results[0].get("href"),
+                }
+    except Exception:
+        pass
+    return {"description": None, "url": None}
 
 
 @app.delete("/api/entities/{entity_id}", status_code=204)
@@ -70,7 +111,7 @@ def delete_entity(entity_id: int, db: Session = Depends(get_db)):
 
 
 def do_run(db: Session) -> list[dict]:
-    """Run search for all entities. Returns list of results (mock for now)."""
+    """Run DuckDuckGo news search for all entities and store results."""
     entities = db.query(Entity).all()
     run = Run(status="running")
     db.add(run)
@@ -79,21 +120,31 @@ def do_run(db: Session) -> list[dict]:
     results = []
     try:
         for e in entities:
-            # Mock: one placeholder result per entity. Replace with real search later.
-            hits = [
-                {
-                    "title": f"News about {e.name}",
-                    "url": f"https://example.com/{e.name.replace(' ', '-')}",
-                    "snippet": f"Recent content related to {e.name}.",
-                    "source": "example.com",
-                }
-            ]
+            query = f"{e.name} {e.context}" if e.context else e.name
+            try:
+                with DDGS() as ddgs:
+                    hits = list(ddgs.news(query, max_results=5))
+            except Exception:
+                hits = []
             for h in hits:
-                r = Result(run_id=run.id, entity_name=e.name, title=h["title"], url=h["url"], snippet=h.get("snippet"), source=h.get("source"))
+                r = Result(
+                    run_id=run.id,
+                    entity_name=e.name,
+                    title=h.get("title", ""),
+                    url=h.get("url", ""),
+                    snippet=h.get("body"),
+                    source=h.get("source"),
+                )
                 db.add(r)
-                results.append({"entity_name": e.name, "title": r.title, "url": r.url, "snippet": r.snippet, "source": r.source})
+                results.append({
+                    "entity_name": e.name,
+                    "title": r.title,
+                    "url": r.url,
+                    "snippet": r.snippet,
+                    "source": r.source,
+                })
         run.status = "completed"
-    except Exception as ex:
+    except Exception:
         run.status = "failed"
         raise
     finally:
