@@ -148,7 +148,7 @@ def do_run(db: Session) -> list[dict]:
     results = []
     try:
         for e in entities:
-            query = f"{e.name} {e.context}" if e.context else e.name
+            query = f'"{e.name}" {e.context}' if e.context else f'"{e.name}"'
             try:
                 with DDGS() as ddgs:
                     hits = list(ddgs.news(query, max_results=10, timelimit="m"))
