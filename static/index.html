@@ -28,6 +28,7 @@
     .output a { color: #06c; }
     .output .meta { font-size: 0.85rem; color: #666; margin-top: 0.25rem; }
     .output .last-run-note { font-size: 0.8rem; color: #999; margin-bottom: 0.75rem; }
+    .item-date { font-size: 0.85rem; color: #999; font-weight: normal; }
     .error { color: #c00; }
     .row { display: flex; gap: 0.5rem; align-items: flex-end; flex-wrap: wrap; }
   </style>
@@ -108,13 +109,15 @@
       }
       const noteHtml = note ? `<div class="last-run-note">${esc(note)}</div>` : '';
       outputEl.className = 'output';
-      outputEl.innerHTML = noteHtml + results.map(r => `
+      outputEl.innerHTML = noteHtml + results.map(r => {
+        const dateStr = r.date ? new Date(r.date).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' }) : '';
+        return `
         <div class="item">
-          <strong>${esc(r.entity_name)}</strong><br />
+          <strong>${esc(r.entity_name)}</strong>${dateStr ? ' <span class="item-date">· ' + dateStr + '</span>' : ''}<br />
           <a href="${esc(r.url)}" target="_blank" rel="noreferrer">${esc(r.title)}</a>
           <div class="meta">${esc(r.source || '')}${r.snippet ? ' · ' + esc(r.snippet) : ''}</div>
-        </div>
-      `).join('');
+        </div>`;
+      }).join('');
     }
 
     function loadEntities() {

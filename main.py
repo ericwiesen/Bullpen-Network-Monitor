@@ -139,14 +139,15 @@ def delete_entity(entity_id: int, db: Session = Depends(get_db)):
 
 
 def do_run(db: Session) -> list[dict]:
-    """Run DuckDuckGo news search for all entities and store results."""
+    """Run DuckDuckGo news search for all entities, sort by recency, and store results."""
     entities = db.query(Entity).all()
     run = Run(status="running")
     db.add(run)
     db.commit()
     db.refresh(run)
-    results = []
     try:
+        # Collect all hits across all entities
+        all_hits = []
         for e in entities:
             query = f'"{e.name}" {e.context}' if e.context else f'"{e.name}"'
             try:
@@ -155,22 +156,31 @@ def do_run(db: Session) -> list[dict]:
             except Exception:
                 hits = []
             for h in hits:
-                r = Result(
-                    run_id=run.id,
-                    entity_name=e.name,
-                    title=h.get("title", ""),
-                    url=h.get("url", ""),
-                    snippet=h.get("body"),
-                    source=h.get("source"),
-                )
-                db.add(r)
-                results.append({
-                    "entity_name": e.name,
-                    "title": r.title,
-                    "url": r.url,
-                    "snippet": r.snippet,
-                    "source": r.source,
-                })
+                all_hits.append((e.name, h))
+
+        # Sort all hits by date descending (ISO strings sort correctly)
+        all_hits.sort(key=lambda x: x[1].get("date", ""), reverse=True)
+
+        # Store and build response in sorted order
+        results = []
+        for entity_name, h in all_hits:
+            r = Result(
+                run_id=run.id,
+                entity_name=entity_name,
+                title=h.get("title", ""),
+                url=h.get("url", ""),
+                snippet=h.get("body"),
+                source=h.get("source"),
+            )
+            db.add(r)
+            results.append({
+                "entity_name": entity_name,
+                "title": r.title,
+                "url": r.url,
+                "snippet": r.snippet,
+                "source": r.source,
+                "date": h.get("date", ""),
+            })
         run.status = "completed"
     except Exception:
         run.status = "failed"
@@ -198,7 +208,7 @@ def last_run_results(db: Session = Depends(get_db)):
         "status": run.status,
         "created_at": run.created_at.isoformat() if run.created_at else None,
         "results": [
-            {"entity_name": r.entity_name, "title": r.title, "url": r.url, "snippet": r.snippet, "source": r.source}
+            {"entity_name": r.entity_name, "title": r.title, "url": r.url, "snippet": r.snippet, "source": r.source, "date": ""}
             for r in rows
         ],
     }
